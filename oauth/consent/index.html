@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>BROS MCP Authorization</title>
+
+  <style>
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      max-width: 680px;
+      margin: 48px auto;
+      padding: 0 20px;
+      color: #18181b;
+    }
+
+    .card {
+      border: 1px solid #d4d4d8;
+      border-radius: 16px;
+      padding: 24px;
+      margin: 16px 0;
+    }
+
+    input {
+      box-sizing: border-box;
+      width: 100%;
+      padding: 11px 12px;
+      margin: 6px 0 12px;
+      border: 1px solid #a1a1aa;
+      border-radius: 8px;
+    }
+
+    button {
+      padding: 10px 14px;
+      border: 0;
+      border-radius: 8px;
+      background: #18181b;
+      color: white;
+      margin-right: 8px;
+      cursor: pointer;
+    }
+
+    button.secondary {
+      background: #e4e4e7;
+      color: #18181b;
+    }
+
+    .muted {
+      color: #71717a;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>BROS MCP</h1>
+  <p>Authorize ChatGPT to access the private Biblical Research Operating System.</p>
+
+  <div id="app" class="card">
+    <p>Loading authorization request...</p>
+  </div>
+
+  <script type="module">
+    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.57.4";
+
+    const SUPABASE_URL =
+      "https://vwfifcstsodvrzhcpxqb.supabase.co";
+
+    const SUPABASE_PUBLISHABLE_KEY =
+      "sb_publishable_ZeikBFhDAYmRLFH_LqCFLw_RJJDpmBE";
+
+    const BROS_BASE =
+      "https://vwfifcstsodvrzhcpxqb.supabase.co/functions/v1/bros-mcp";
+
+    const sb = createClient(
+      SUPABASE_URL,
+      SUPABASE_PUBLISHABLE_KEY
+    );
+
+    const app = document.getElementById("app");
+
+    const authorizationId =
+      new URLSearchParams(location.search).get("authorization_id");
+
+    function esc(value) {
+      return String(value == null ? "" : value).replace(
+        /[&<>"]/g,
+        function (c) {
+          return {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;"
+          }[c];
+        }
+      );
+    }
+
+    function message(text) {
+      app.innerHTML = "<p>" + esc(text) + "</p>";
+    }
+
+    async function getSession() {
+      const result = await sb.auth.getSession();
+
+      if (result.error) {
+        throw result.error;
+      }
+
+      return result.data.session;
+    }
+
+    async function render() {
+      if (!authorizationId) {
+        message("Missing authorization_id.");
+        return;
+      }
+
+      const session = await getSession();
+
+      if (!session) {
+        app.innerHTML = `
+          <h2>Sign in</h2>
+
+          <p class="muted">
+            Use your BROS Supabase account.
+            If this is your first login, create the account here.
+          </p>
+
+          <label>Email</label>
+          <input
+            id="email"
+            type="email"
+            autocomplete="email"
+          >
+
+          <label>Password</label>
+          <input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+          >
+
+          <button id="signin">Sign in</button>
+          <button id="signup" class="secondary">
+            Create account
+          </button>
+
+          <p id="status" class="muted"></p>
+        `;
+
+        document.getElementById("signin").onclick =
+          async function () {
+            const email =
+              document.getElementById("email").value;
+
+            const password =
+              document.getElementById("password").value;
+
+            const result =
+              await sb.auth.signInWithPassword({
+                email,
+                password
+              });
+
+            document.getElementById("status").textContent =
+              result.error
+                ? result.error.message
+                : "Signed in.";
+
+            if (!result.error) {
+              await render();
+            }
+          };
+
+        document.getElementById("signup").onclick =
+          async function () {
+            const email =
+              document.getElementById("email").value;
+
+            const password =
+              document.getElementById("password").value;
+
+            const result =
+              await sb.auth.signUp({
+                email,
+                password
+              });
+
+            document.getElementById("status").textContent =
+              result.error
+                ? result.error.message
+                : result.data.session
+                  ? "Account created and signed in."
+                  : "Account created. If email confirmation is required, confirm it, then return and sign in.";
+
+            if (result.data.session) {
+              await render();
+            }
+          };
+
+        return;
+      }
+
+      const details =
+        await sb.auth.oauth.getAuthorizationDetails(
+          authorizationId
+        );
+
+      if (details.error) {
+        message(details.error.message);
+        return;
+      }
+
+      if (
+        details.data &&
+        !("authorization_id" in details.data) &&
+        details.data.redirect_url
+      ) {
+        location.assign(details.data.redirect_url);
+        return;
+      }
+
+      const response =
+        await fetch(
+          BROS_BASE + "/oauth/access-status",
+          {
+            headers: {
+              Authorization:
+                "Bearer " + session.access_token
+            }
+          }
+        );
+
+      const access = await response.json();
+
+      const client =
+        (details.data && details.data.client) || {};
+
+      const scope =
+        (details.data && details.data.scope) || "";
+
+      app.innerHTML = `
+        <h2>Authorize access</h2>
+
+        <p>
+          <strong>Signed in:</strong>
+          ${esc(session.user.email || session.user.id)}
+        </p>
+
+        <p>
+          <strong>Client:</strong>
+          ${esc(
+            client.name ||
+            client.client_name ||
+            client.id ||
+            "ChatGPT"
+          )}
+        </p>
+
+        <p>
+          <strong>Requested scopes:</strong>
+          ${esc(scope || "None specified")}
+        </p>
+
+        <p>
+          <strong>BROS access:</strong>
+          ${access.authorized
+            ? "Approved"
+            : "Not approved yet"}
+        </p>
+
+        <div id="actions"></div>
+        <p id="status" class="muted"></p>
+      `;
+
+      const actions =
+        document.getElementById("actions");
+
+      if (access.authorized) {
+        actions.innerHTML = `
+          <button id="approve">Approve</button>
+          <button id="deny" class="secondary">
+            Deny
+          </button>
+        `;
+
+        document.getElementById("approve").onclick =
+          async function () {
+            const result =
+              await sb.auth.oauth.approveAuthorization(
+                authorizationId
+              );
+
+            if (result.error) {
+              document.getElementById("status").textContent =
+                result.error.message;
+              return;
+            }
+
+            location.assign(result.data.redirect_url);
+          };
+
+        document.getElementById("deny").onclick =
+          async function () {
+            const result =
+              await sb.auth.oauth.denyAuthorization(
+                authorizationId
+              );
+
+            if (result.error) {
+              document.getElementById("status").textContent =
+                result.error.message;
+              return;
+            }
+
+            location.assign(result.data.redirect_url);
+          };
+      } else {
+        actions.innerHTML = `
+          <button id="request">
+            Request BROS access
+          </button>
+
+          <button id="signout" class="secondary">
+            Sign out
+          </button>
+        `;
+
+        document.getElementById("request").onclick =
+          async function () {
+            const response =
+              await fetch(
+                BROS_BASE + "/oauth/request-access",
+                {
+                  method: "POST",
+                  headers: {
+                    Authorization:
+                      "Bearer " + session.access_token
+                  }
+                }
+              );
+
+            const data =
+              await response.json();
+
+            document.getElementById("status").textContent =
+              data.pending
+                ? "Access request recorded. BROS remains locked until this user is explicitly approved."
+                : JSON.stringify(data);
+          };
+
+        document.getElementById("signout").onclick =
+          async function () {
+            await sb.auth.signOut();
+            await render();
+          };
+      }
+    }
+
+    render().catch(function (error) {
+      message(
+        error && error.message
+          ? error.message
+          : String(error)
+      );
+    });
+  </script>
+</body>
+</html>
