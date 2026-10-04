@@ -59,8 +59,8 @@
     <p>Loading authorization request...</p>
   </div>
 
-  <script type="module">
-    import { createClient } from "https://esm.sh/@supabase/supabase-js@2.117.2";
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
     
     const SUPABASE_URL =
       "https://vwfifcstsodvrzhcpxqb.supabase.co";
@@ -71,10 +71,10 @@
     const BROS_BASE =
       "https://vwfifcstsodvrzhcpxqb.supabase.co/functions/v1/bros-mcp";
 
-    const sb = createClient(
-      SUPABASE_URL,
-      SUPABASE_PUBLISHABLE_KEY
-    );
+    const sb = window.supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_PUBLISHABLE_KEY
+);
 
     const app = document.getElementById("app");
 
